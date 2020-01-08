@@ -1,6 +1,9 @@
 # decision-matrix
 A small on-line decision matrix application to assist in decision making and precise communication of relevant factors inside communities. Written in OCaml using the TEA architecture.
 
+[Try it on-line](https://decisionmatrix.z13.web.core.windows.net)
+
+
 ## To-Do
 There is much to do!!! This is an initial commit.
 
