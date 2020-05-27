@@ -223,21 +223,26 @@ module MakeTable (CellValue: CellValue) : (Table with type cell_value := CellVal
                 (Decoder.field "columns" string_list_decoder)
                 (Decoder.field "rows" string_list_decoder) 
                 (Decoder.field "values" values_decoder) in                
-            (Decoder.decodeString record_decoder s)
-            |> Utils.ResultEx.flatMap (fun (columns, row_names, values) ->
-                Belt.List.zip row_names values
-                |> Utils.ListEx.map_while_ok (fun (name, cell_value_strings) -> 
-                    cell_value_strings 
-                    |> List.map (fun cell_value_string -> 
-                        match CellValue.of_string cell_value_string with
-                        | Some v -> Tea.Result.Ok v
-                        | None -> Tea.Result.Error (sprintf "could not parse '%s' for row '%s'" cell_value_string name)
-                    ) 
-                    |> Tea.Result.accumulate 
-                    |> Utils.ResultEx.map (fun cell_values -> { name; cell_values })
-                )
-                |> Utils.ResultEx.map (fun rows -> { columns; rows })
-            )            
+            let cleaned_string = String.trim s in
+            if (String.length cleaned_string) = 0
+            then Tea.Result.Error "Empty string; unable to deserialize"
+            else 
+                (Decoder.decodeString record_decoder cleaned_string)
+                |> Utils.ResultEx.flatMap (fun (columns, row_names, values) ->
+                    Belt.List.zip row_names values
+                    |> Utils.ListEx.map_while_ok (fun (name, cell_value_strings) -> 
+                        cell_value_strings 
+                        |> List.map (fun cell_value_string -> 
+                            match CellValue.of_string cell_value_string with
+                            | Some v -> Tea.Result.Ok v
+                            | None -> Tea.Result.Error (sprintf "could not parse '%s' for row '%s'" cell_value_string name)
+                        ) 
+                        |> Tea.Result.accumulate 
+                        |> Utils.ResultEx.map (fun cell_values -> { name; cell_values })
+                    )
+                    |> Utils.ResultEx.map (fun rows -> { columns; rows })
+                ) 
+                       
 
     let encode { columns; rows } = 
         [

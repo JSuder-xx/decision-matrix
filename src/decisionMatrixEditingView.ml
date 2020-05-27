@@ -4,6 +4,13 @@ open Printf
 open DecisionMatrix
 open DecisionMatrixEditing
 
+module TriIntPartitioner = TriPartitioner.Make(
+    struct
+        type t = int
+        let compare = compare
+    end
+)
+
 let button_view ?enabled:(enabled = true) title msg  =
     button
         [ onClick msg; Attributes.disabled (not enabled)]
@@ -44,26 +51,34 @@ let decision_matrix_view
         | None -> readonly_dimension_name_header in
     let header_cell s = th [] [text s] in
     let readonly_span v = v |> string_of_int |> text |> (Belt.List.make 1) |> (span [class' Styles.cell_value_class]) in
-    let editable_cell_value ?additional_class_opt:(additional_class_opt = None) =
+    let editable_cell_value ?show_percentage_out_of_opt:(show_percentage_out_of_opt = None) ?additional_class_opt:(additional_class_opt = None) =
         match change_cell_value_opt with
             | Some change_cell_value -> 
                 (fun alternative_name (factor_name, v) ->                    
                     td 
-                        [
-                            editable_cell_styling alternative_name factor_name
-                            ; match additional_class_opt with
-                                | None -> Tea.Html.noProp
-                                | Some additional -> class' additional
+                        [ editable_cell_styling alternative_name factor_name
+                        ; match additional_class_opt with
+                            | None -> Tea.Html.noProp
+                            | Some additional -> class' additional
                         ] 
-                        [
-                        input'
-                            [
-                                onInput (change_cell_value alternative_name factor_name)
-                                ; value (string_of_int v)                            
-                                ; type' "number"
-                                ; class' Styles.cell_value_class
+                        [ input'
+                            [ onInput (change_cell_value alternative_name factor_name)
+                            ; value (string_of_int v)                            
+                            ; type' "number"
+                            ; class' Styles.cell_value_class
                             ]
                             []                        
+                        ; match show_percentage_out_of_opt with
+                            | None -> 
+                                Tea.Html.noNode
+                            | Some show_percentage_out_of ->
+                                let display = 
+                                    if show_percentage_out_of = 0 
+                                    then ""
+                                    else 
+                                        let percentage = (100 * v) / show_percentage_out_of in
+                                        Printf.sprintf " %d%%" percentage in
+                                span [class' Styles.percentage_class] [text display]
                         ]
                 )
             | None -> 
@@ -74,13 +89,9 @@ let decision_matrix_view
         let factor_view factor_name = link_header_cell (DecisionMatrix.FactorName factor_name) in
         tr [] 
             (List.concat 
-                [
-                    [(header_cell "Factors")]
-                    ; (
-                        factor_names
-                        |> List.map factor_view
-                    )
-                    ; [(header_cell "")]
+                [ [(header_cell "Factors")]
+                ; factor_names |> List.map factor_view                
+                ; [(header_cell "")]
                 ]
             ) in
     let weights_row = 
@@ -90,32 +101,38 @@ let decision_matrix_view
                     [(header_cell "Weight")]
                     ; (
                         let (weights_name, values) = DecisionMatrix.weight_cells matrix in
-                        values |> List.map (editable_cell_value ~additional_class_opt: (Some Styles.weight_cell_class) weights_name)
+                        let total = values |> List.map snd |> List.fold_left (+) 0 in 
+                        values |> List.map (editable_cell_value ~show_percentage_out_of_opt: (Some total) ~additional_class_opt: (Some Styles.weight_cell_class) weights_name)
                     )
-                    ; [th [class' Styles.score_class] [text "Score"]]
+                    ; [th [class' Styles.score_header_class] [text "Score"]]
                 ]
             ) in      
-    let alternative_row ({name; values; score}: DecisionMatrix.alternative) =        
+    let alternative_row (({name; values; score}: DecisionMatrix.alternative), state) =        
         tr [] 
             (List.concat 
-                [
-                    [link_header_cell (DecisionMatrix.AlternativeName name)]
-                    ; values  |> List.map (editable_cell_value name)
-                    ; [td [class' Styles.score_class] [readonly_span score]]
+                [ [link_header_cell (DecisionMatrix.AlternativeName name)]
+                ; values  |> List.map (editable_cell_value name)
+                ; [ td 
+                    [state |> Styles.score_class |> class'] 
+                    [readonly_span score]
+                  ]
                 ]
             ) in
     let factor_names = matrix |> DecisionMatrix.factor_names in
     let alternatives = matrix |> DecisionMatrix.alternatives in                                      
-    let almost_there_messsage_text required = text (sprintf "Almost there! Add at least one %s to start filling in the the Decision Matrix." required) in
+    let almost_there_messsage_text required = text (sprintf "Add at least one %s to start filling in the the Decision Matrix cells." required) in
     match factor_names, alternatives with
     | [], [] -> p [] [text (sprintf "Add %ss and %ss using the buttons above to start filling in the Decision Matrix." DecisionMatrix.alternative_editing.label DecisionMatrix.factor_editing.label)]
     | _, [] -> p [] [almost_there_messsage_text DecisionMatrix.alternative_editing.label]
     | [], _ -> p [] [almost_there_messsage_text DecisionMatrix.factor_editing.label]
     | _ ->
+        let partition = alternatives 
+            |> List.map (fun ({score}: DecisionMatrix.alternative) -> score) 
+            |> TriIntPartitioner.partition in
         table
             []
             ((header_row factor_names)
-            ::(weights_row::(alternatives |> List.map alternative_row))
+            ::(weights_row::(alternatives |> List.map (fun (alt: DecisionMatrix.alternative) -> (alt, partition alt.score)) |> List.map alternative_row))
             )
 let should_display_matrix_view matrix =
     let factors = matrix |> DecisionMatrix.factor_names in
@@ -161,25 +178,40 @@ let changing_name_view ({dimension_item_to_edit; new_name}:ChangingNameInfo.t) ~
         ~current_value: new_name
         ~error_message: error_message
 
+let share_caption = "Share to Url"
+
+module Instructions = struct
+
+    let general = 
+        [ {j|
+A Decision Matrix is an analytical tool for choosing between different Alternatives (aka Choices or Options) by rating each Alternative 
+for a number of Factors (aka Criteria). The Alternative with the highest score is the best choice based upon the given weights. 
+|j}     ; {j|
+The beauty of the Decision Matrix is that it distinguishes between how well an Alternative rates or performs for a given Factor and the significance of that Factor.
+The distinction between performance and significance tends to foster more productive conversations with peers by empowering 
+more pecise articulation of agreement and disagreement. 
+|j}
+        ; {j|
+Click <$share_caption> and copy the url to share the decision matrix with a collaborator. 
+|j}
+        ]
+
+end
+
 let view ({ decision_matrix; interaction_state; error_message }: Model.t) =
     let (factor_label, alternative_label) = (DecisionMatrix.factor_editing.label, DecisionMatrix.alternative_editing.label) in
     let update_cell_value (alternative_name:DecisionMatrix.alternative_name) (factor_name:DecisionMatrix.factor_name) (value: string) : Message.t =
         Message.UpdateCellValue (alternative_name, factor_name, value) in
-    let instructions s = p [] [text s] in
+    let paragraph s = p [] [text s] in 
+    let instructions paragraphs = div [class' Styles.instructions_container_class] (paragraphs |> List.map paragraph) in
     let (top_controls, main_content) =
         (match interaction_state with
             | EditingCellValues ->
                 let display_matrix_view = should_display_matrix_view decision_matrix in
                 let add_factor_button = button_view (sprintf "+%s" factor_label) (Message.StartAdding (Either.Left DecisionMatrix.factor_editing)) in
                 let add_alternative_button = button_view (sprintf "+%s" alternative_label) (Message.StartAdding (Either.Right DecisionMatrix.alternative_editing)) in
-                let matrix_instructions = instructions 
-                    ({j|
-A Decision Matrix is an analytical tool for choosing between different Alternatives (aka Choices or Options) by rating how each Alternative 
-scores for different Factors (aka Criteria). The analyst (you) determines the Weight (significance) of each Factor for the
-current problem or situation. The Matrix displays the score for each alternative based upon the combination of its own ratings and the 
-situational weights. The Alternative with the highest score is the best choice based upon the given weights. 
-|j}
-                    ) in
+                let button_divider () = span [] [text " | "] in
+                let matrix_instructions = instructions Instructions.general in
                 (
                     (
                         if not display_matrix_view
@@ -189,10 +221,12 @@ situational weights. The Alternative with the highest score is the best choice b
                             [
                                 add_factor_button
                                 ; add_alternative_button
+                                ; button_divider ()
                                 ; button_view "Re-Name" (Message.SelectItemTo ChangeName)
                                 ; button_view "Remove" (Message.SelectItemTo Delete)
                                 ; button_view "Move" (Message.SelectItemTo Move)
-                                ; button_view "Share to Url" (Message.SaveToUrl)
+                                ; button_divider ()
+                                ; button_view share_caption (Message.SaveToUrl)
                                 ; button_view "Reset" Message.RequestReset
                                 ; matrix_instructions
                             ]
@@ -209,7 +243,7 @@ situational weights. The Alternative with the highest score is the best choice b
                 (
                     [
                         button_view "Cancel" Message.Cancel
-                        ; instructions (
+                        ; instructions [
                             let message action = 
                                 sprintf 
                                     "Click the header link for the %s or %s below to %s. Click Cancel if you would rather not." 
@@ -218,7 +252,7 @@ situational weights. The Alternative with the highest score is the best choice b
                             | Move -> message "begin MOVING the element"
                             | ChangeName -> message "RE-NAME the element"
                             | Delete -> message "DELETE the element from the Decision Matrix"
-                        )
+                        ]
                     ]
                     , decision_matrix_view 
                         decision_matrix 
@@ -254,7 +288,7 @@ situational weights. The Alternative with the highest score is the best choice b
                 (
                     [
                         button_view "Done" Message.Cancel
-                        ; instructions "The original item will be placed after the next item you choose. Choose Done when finished moving items."
+                        ; instructions ["The original item will be placed after the next item you choose. Choose Done when finished moving items."]
                     ]
                     , decision_matrix_view 
                         decision_matrix 

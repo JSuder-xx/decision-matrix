@@ -19,6 +19,8 @@ module DimensionToEdit = struct
         | Right editing -> editing.label
 end
 
+let decision_matrix_key = "decision_matrix"
+
 module DimensionItemToEdit = struct
     type t = (DecisionMatrix.factor_editing * DecisionMatrix.factor_name, DecisionMatrix.alternative_editing * DecisionMatrix.alternative_name) Either.t 
 
@@ -65,6 +67,8 @@ module Message = struct
         | UpdateCellValue of DecisionMatrix.alternative_name * DecisionMatrix.factor_name * string        
 
         | SaveToUrl 
+        | LoadedFromLocalStorage of string
+        | ErrorLoadingFromLocalStorage of string
         | LocationChanged of Web.Location.location
 end
 
@@ -145,19 +149,33 @@ module Model = struct
         Printf.sprintf "#/matrix/%s" (url_of_string (DecisionMatrix.encode decision_matrix))
 
     let decision_matrix_from_location location =
-        Js.Console.log location.Web.Location.hash;
         match Js.String.split "/" location.Web.Location.hash with
         | [|"#"; "matrix"; matrix_url|] -> 
-            Js.Console.log (string_of_url matrix_url);
             DecisionMatrix.decode (string_of_url matrix_url)
-        | _ -> Tea.Result.Ok (DecisionMatrix.empty ())    
+        | _ -> Tea.Result.Error "Unable to match pattern"
 
-    let init location : t =
+    let init location =
         match decision_matrix_from_location location with
         | Tea.Result.Ok decision_matrix ->
-            { decision_matrix; interaction_state = default_interaction_state; error_message = None }
+            Js.Console.log "loaded decision matrix from location";
+            ({ decision_matrix; interaction_state = default_interaction_state; error_message = None }, Tea.Cmd.NoCmd)
         | Tea.Result.Error error_message ->
-            { decision_matrix = (DecisionMatrix.empty ()); interaction_state = default_interaction_state; error_message = Some error_message}
+            Js.Console.log (Printf.sprintf "Failed to load from location: %s. Issuing command to load from storage" error_message);
+            (
+                { decision_matrix = (DecisionMatrix.empty ()); interaction_state = default_interaction_state; error_message = None }, 
+                Tea_task.attempt 
+                    (fun load_result -> 
+                        match load_result with 
+                        | Ok loaded -> 
+                            if (Js.eqNull loaded Js.null)
+                            then Message.Reset
+                            else Message.LoadedFromLocalStorage loaded
+                        
+                        | Error msg ->
+                            Message.ErrorLoadingFromLocalStorage msg
+                    ) 
+                    (Tea.Ex.LocalStorage.getItem decision_matrix_key) 
+            )
 
     let commit decision_matrix ~initial_interaction ~successful_interaction = function
         | Tea.Result.Ok factory -> 
@@ -166,45 +184,57 @@ module Model = struct
             { decision_matrix; interaction_state = initial_interaction; error_message = Some error_message; }
 end
 
-let no_command model = (model, Tea.Cmd.NoCmd)
+let save_when_no_error (model: Model.t) = 
+    match model.error_message with
+    | Some _ ->
+        (model, Tea.Cmd.NoCmd)
+    | None ->
+        let serialized = DecisionMatrix.encode model.decision_matrix in
+        (model, Tea.Ex.LocalStorage.setItemCmd decision_matrix_key serialized)
 
 let update ({ interaction_state; decision_matrix; error_message }: Model.t) = let open Model in function 
-    | Message.LocationChanged location -> no_command (Model.init location)
+    | Message.LocationChanged location -> 
+        Model.init location
     | Message.SaveToUrl -> 
         (match error_message with
-        | None -> ({ interaction_state; decision_matrix; error_message }, Tea.Navigation.newUrl (url_string_of_decision_matrix decision_matrix))
+        | None -> 
+            (
+                { interaction_state; decision_matrix; error_message }
+                , Tea.Navigation.newUrl (url_string_of_decision_matrix decision_matrix)
+            )
         | Some err -> 
-            no_command 
-                {interaction_state; decision_matrix; error_message = Some (Printf.sprintf "Cannot save to url when there is an error: %s" err)}
+            save_when_no_error 
+                { interaction_state
+                ; decision_matrix
+                ; error_message = Some (Printf.sprintf "Cannot save to url when there is an error: %s" err)
+                }
         )
-    | Message.Cancel -> no_command { decision_matrix; error_message = None; interaction_state = Model.default_interaction_state }
+    | Message.Cancel -> 
+        save_when_no_error { decision_matrix; error_message = None; interaction_state = Model.default_interaction_state }
     | Message.SelectItemTo element_action ->
-        no_command { decision_matrix; error_message = None; interaction_state = Model.SelectingItemTo element_action }
+        save_when_no_error { decision_matrix; error_message = None; interaction_state = Model.SelectingItemTo element_action }
     | Message.StartAdding dimension_editing ->
         let new_adding = AddingInfo.make dimension_editing in
-        no_command
-            {
-                decision_matrix; 
-                interaction_state = Model.Adding new_adding;
-                error_message = AddingInfo.validate decision_matrix new_adding
+        save_when_no_error
+            { decision_matrix
+            ; interaction_state = Model.Adding new_adding
+            ; error_message = AddingInfo.validate decision_matrix new_adding
             }  
     | StartChangingName dimension_item_to_edit ->
         let changing_name_info = ChangingNameInfo.make dimension_item_to_edit in
-        no_command
-            {
-                decision_matrix; 
-                interaction_state = Model.ChangingName changing_name_info;
-                error_message = ChangingNameInfo.validate decision_matrix changing_name_info;
+        save_when_no_error
+            { decision_matrix
+            ; interaction_state = Model.ChangingName changing_name_info
+            ; error_message = ChangingNameInfo.validate decision_matrix changing_name_info
             }
     | StartMoving dimension_item_to_edit ->
-        no_command
-            {
-                decision_matrix;
-                interaction_state = Model.MovingItem dimension_item_to_edit;
-                error_message = None
+        save_when_no_error
+            { decision_matrix
+            ; interaction_state = Model.MovingItem dimension_item_to_edit
+            ; error_message = None
             }
     | MoveToAfter to_after -> 
-        no_command
+        save_when_no_error
             (match interaction_state with
             | MovingItem moving ->
                 (match to_after with
@@ -224,7 +254,7 @@ let update ({ interaction_state; decision_matrix; error_message }: Model.t) = le
             | _ -> { interaction_state; decision_matrix; error_message = Some "Expecting to be moving."}
             )                   
     | UpdateName new_name -> 
-        no_command
+        save_when_no_error
             (match interaction_state with
             | Model.Adding adding -> 
                 let new_adding = { adding with new_name } in
@@ -243,7 +273,7 @@ let update ({ interaction_state; decision_matrix; error_message }: Model.t) = le
             | _ -> { interaction_state; decision_matrix; error_message = Some "Expecting to be in some mode that supports updating names."}
             )
     | Commit -> 
-        no_command
+        save_when_no_error
             (match interaction_state with
             | Model.Adding adding -> (
                 Model.commit 
@@ -264,14 +294,14 @@ let update ({ interaction_state; decision_matrix; error_message }: Model.t) = le
             | _ -> { interaction_state; decision_matrix; error_message = Some "Cannot commit adding an alternative unless in Adding Alternative mode."}
             )
     | Reset ->
-        no_command
+        save_when_no_error
             {
                 decision_matrix = (DecisionMatrix.empty ()); 
                 error_message = None;
                 interaction_state = default_interaction_state
             }
     | RequestReset ->
-        no_command
+        save_when_no_error
             {
                 decision_matrix; 
                 error_message = None;
@@ -286,7 +316,7 @@ let update ({ interaction_state; decision_matrix; error_message }: Model.t) = le
                             ]
                     }
             }    | RequestRemove dimension_item_to_edit ->
-        no_command
+        save_when_no_error
             { 
                 decision_matrix; 
                 error_message = None;
@@ -305,20 +335,44 @@ let update ({ interaction_state; decision_matrix; error_message }: Model.t) = le
                     }
             }
     | Remove dimension_item_to_edit ->
-        no_command (
+        save_when_no_error (
             Model.commit
                 decision_matrix
                 ~initial_interaction: interaction_state 
                 ~successful_interaction: Model.EditingCellValues 
                 (DimensionItemToEdit.remove dimension_item_to_edit decision_matrix)
-        )           
-  | UpdateCellValue (alternative, factor, value) ->
-        no_command (
+        )          
+    | UpdateCellValue (alternative, factor, value) ->
+        save_when_no_error (
             Model.commit
                 decision_matrix
                 ~initial_interaction: interaction_state
                 ~successful_interaction: interaction_state
                 (DecisionMatrix.update_cell decision_matrix factor alternative value)
         )
+    | ErrorLoadingFromLocalStorage err ->
+        save_when_no_error 
+            { interaction_state
+            ; decision_matrix
+            ; error_message = Some (Printf.sprintf "Error loading from local storage: %s" err)
+            }
+
+    | LoadedFromLocalStorage loaded ->
+        Js.Console.log "H";
+        Js.Console.log loaded;
+        Js.Console.log "H";
+        match (DecisionMatrix.decode loaded) with
+        | Ok decision_matrix ->
+            save_when_no_error 
+                { interaction_state = default_interaction_state
+                ; decision_matrix
+                ; error_message 
+                }
+        | Error err ->
+            save_when_no_error 
+                { interaction_state
+                ; decision_matrix
+                ; error_message = Some (Printf.sprintf "Error loading from local storage: %s" err)
+                }            
     
-let init () location = no_command (Model.init location)
+let init () location = Model.init location

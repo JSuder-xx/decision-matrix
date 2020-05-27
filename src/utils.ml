@@ -57,7 +57,7 @@ end
 
 module StringEx = struct
     let case_insensitive_equal left right =
-        let clean s = s |> String.trim |> String.lowercase in
+        let clean s = s |> String.trim |> String.lowercase_ascii in
         (clean left) = (clean right)
 end
 

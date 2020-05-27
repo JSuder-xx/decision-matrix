@@ -1,10 +1,12 @@
 let blue_color = "#48a9dc"
 
-let gray_color = "#666"
+let gray_color = "#aaa"
 
 let red_color = "#d44"
 
 let error_class = "error"
+
+let percentage_class = "percentage"
 
 let top_controls_class = "top-controls"
 
@@ -20,9 +22,24 @@ let move_link_class = "move-link"
 
 let dialog_class = "dialog"
 
+let instructions_container_class = "instructions"
+
 let highlight_class = "highlight"
 
-let score_class = "score"
+let score_header_class = "score-header"
+
+let score_class = function
+    | TriPartitioner.Low ->
+        "score-low"
+    | TriPartitioner.Medium ->
+        "score-medium"
+    | TriPartitioner.High ->
+        "score-high"
+
+let score_class_low = score_class TriPartitioner.Low
+let score_class_medium = score_class TriPartitioner.Medium
+let score_class_high = score_class TriPartitioner.High
+
 
 let weight_cell_class = "weight-cell"
 
@@ -38,13 +55,17 @@ let style = {j|
         font-size: 14px;
     }
 
+    .$percentage_class {
+        font-size: 12px;
+    }
+
     table { 
         border-collapse: collapse; 
         border: solid 1px $gray_color;
     }   
 
     td {
-        padding: 8px;
+        padding: 3px;
         border: solid 1px $gray_color;
     }
 
@@ -59,8 +80,20 @@ let style = {j|
         background-color: yellow;
     }
 
-    .$score_class {
+    .$score_header_class {
         background-color: white;
+    }
+
+    .$score_class_low {
+        background-color: #faa;
+    }
+
+    .$score_class_medium {
+        background-color: white;
+    }
+
+    .$score_class_high {
+        background-color: #afa;
     }
 
     th > div {
@@ -140,12 +173,17 @@ let style = {j|
     }
 
     div.$top_controls_class {
-        height: 140px;
+        height: 160px;
         padding: 8px;
         border: solid 1px #999;
         margin: 6px;
         background-color: #ddd;
         min-width: 580px;
+    }
+
+    div.$instructions_container_class {
+        height: 120px;
+        overflow: auto;
     }
 
     span.$error_class {

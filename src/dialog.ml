@@ -10,11 +10,9 @@ let view dialog =
     let view_choice (display, message) =
         button 
             [onClick message]
-            [text display]
-    in
+            [text display] in
     div [class' Styles.dialog_class]
-        [
-            h3 [] [text dialog.title]
-            ; p [] [text dialog.message]                 
-            ; div [] (dialog.choices |> List.map view_choice)
+        [ h3 [] [text dialog.title]
+        ; p [] [text dialog.message]                 
+        ; div [] (dialog.choices |> List.map view_choice)
         ]
