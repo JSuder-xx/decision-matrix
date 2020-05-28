@@ -184,8 +184,9 @@ module Instructions = struct
 
     let general = 
         [ {j|
-A Decision Matrix is an analytical tool for choosing between different Alternatives (aka Choices or Options) by rating each Alternative 
-for a number of Factors (aka Criteria). The Alternative with the highest score is the best choice based upon the given weights. 
+A Decision Matrix is an analytical tool to assist in choosing between different Alternatives (aka Choices or Options). Each Alternative is scored 
+with a number from 0 to 10 for the relevant Factors (aka Criteria). The Factors themselves are given a Weight which indicates the relative 
+signifance of that Factor for the decision at hand. The Alternative with the highest calculated score is the best choice. 
 |j}     ; {j|
 The beauty of the Decision Matrix is that it distinguishes between how well an Alternative rates or performs for a given Factor and the significance of that Factor.
 The distinction between performance and significance tends to foster more productive conversations with peers by empowering 

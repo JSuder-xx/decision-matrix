@@ -4,7 +4,15 @@ module IntCellValue : Table.CellValue with type t = int = struct
     type t = int
 
     let default () = 0    
-    let of_string s = try Some (s |> String.trim |> int_of_string) with _ -> None    
+    let of_string s = 
+        try 
+            let v = s |> String.trim |> int_of_string in
+            if v >= 0 && v <= 10 
+            then Tea.Result.Ok v
+            else Tea.Result.Error "Must be between 0 and 10."
+        with 
+            _ -> Tea.Result.Error (Printf.sprintf "Trouble converting '%s' to a number" s)
+
     let to_string = string_of_int
 end
 

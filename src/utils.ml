@@ -88,6 +88,10 @@ module ResultEx = struct
         | Tea.Result.Ok original -> Tea.Result.Ok (fn original)
         | Tea.Result.Error err -> Tea.Result.Error err
 
+    let map_error (fn: ('b -> 'b)) = function 
+        | Tea.Result.Ok v -> Tea.Result.Ok v
+        | Tea.Result.Error err -> Tea.Result.Error (fn err)
+
     let return value = Tea.Result.Ok value
 
     let flatten = function

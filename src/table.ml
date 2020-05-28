@@ -3,7 +3,7 @@ open Printf
 module type CellValue = sig
     type t  
     val default: unit -> t
-    val of_string: string -> t option
+    val of_string: string -> (t, string)Tea.Result.t
     val to_string: t -> string
 end
 
@@ -233,9 +233,7 @@ module MakeTable (CellValue: CellValue) : (Table with type cell_value := CellVal
                     |> Utils.ListEx.map_while_ok (fun (name, cell_value_strings) -> 
                         cell_value_strings 
                         |> List.map (fun cell_value_string -> 
-                            match CellValue.of_string cell_value_string with
-                            | Some v -> Tea.Result.Ok v
-                            | None -> Tea.Result.Error (sprintf "could not parse '%s' for row '%s'" cell_value_string name)
+                            Utils.ResultEx.map_error (sprintf "could not parse '%s' for row '%s': Error: %s" cell_value_string name) (CellValue.of_string cell_value_string) 
                         ) 
                         |> Tea.Result.accumulate 
                         |> Utils.ResultEx.map (fun cell_values -> { name; cell_values })
@@ -275,6 +273,8 @@ module MakeTable (CellValue: CellValue) : (Table with type cell_value := CellVal
             
     let update_cell_from_string table ~column_name ~row_name ~new_value =
         match (CellValue.of_string new_value) with
-        | None -> Tea.Result.Error (sprintf "failed to update column %s, row %s - '%s' is not a valid value" (string_of_column_name column_name) (string_of_row_name row_name) new_value)
-        | Some cell -> update_cell table ~column_name: column_name ~row_name: row_name ~new_value: cell
+        | Tea.Result.Error err -> 
+            Tea.Result.Error (sprintf "failed to update column %s, row %s - '%s': %s" (string_of_column_name column_name) (string_of_row_name row_name) new_value err)
+        | Tea.Result.Ok cell -> 
+            update_cell table ~column_name: column_name ~row_name: row_name ~new_value: cell
 end
