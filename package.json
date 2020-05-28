@@ -14,7 +14,7 @@
   },
   "license": "MIT",
   "scripts": {
-    "serve": "serve release",
+    "serve": "serve dist",
     "clean": "bsb -clean-world",
     "build:bsb": "bsb -make-world",
     "build:js": "rollup -c",
