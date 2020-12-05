@@ -4,9 +4,7 @@ A small on-line decision matrix application to assist in decision making and pre
 
 [Try it on-line](https://decisionmatrix.z13.web.core.windows.net)
 
-## To-Do
-
-There is much to do!!! This is an initial commit.
+![Logo](logo.jpg)
 
 ## Evangelism
 
