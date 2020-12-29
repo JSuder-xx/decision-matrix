@@ -42,6 +42,7 @@ module type DecisionMatrix = sig
 
     type 'dimension_name dimension_editing = {
         label: string;
+        add_instructions: string;
         add: t -> with_name: string -> decision_matrix_factory_result;
         remove: t -> with_name: 'dimension_name -> decision_matrix_factory_result;
         change_name: t -> old_name: 'dimension_name -> new_name: string -> decision_matrix_factory_result;
@@ -89,6 +90,7 @@ module DecisionMatrix : DecisionMatrix = struct
 
     type 'dimension_name dimension_editing = {
         label: string;
+        add_instructions: string;
         add: t -> with_name: string -> decision_matrix_factory_result;
         remove: t -> with_name: 'dimension_name -> decision_matrix_factory_result;
         change_name: t -> old_name: 'dimension_name -> new_name: string -> decision_matrix_factory_result;
@@ -142,7 +144,13 @@ module DecisionMatrix : DecisionMatrix = struct
 
     let factor_editing : factor_editing = 
         let decorated: DecisionMatrixTable.column_name DecisionMatrixTable.dimension_editing = DecisionMatrixTable.column_editing in        
-        { label = "Factor"; add = decorated.add; remove = decorated.remove; change_name = decorated.change_name; move = decorated.move }        
+        { label = "Criterion"
+        ; add_instructions = "Add a new criterion which you will use to judge your choices."
+        ; add = decorated.add
+        ; remove = decorated.remove
+        ; change_name = decorated.change_name
+        ; move = decorated.move 
+        }        
     
     let alternative_editing : alternative_editing = 
         let decorated: DecisionMatrixTable.row_name DecisionMatrixTable.dimension_editing = DecisionMatrixTable.row_editing in 
@@ -167,7 +175,9 @@ module DecisionMatrix : DecisionMatrix = struct
             then weights_error "Cannot move to before %s."
             else decorated.move table ~moving: moving ~to_after: to_after
         in
-            { label = "Alternative"; add; remove; change_name; move } 
+            { label = "Choice"
+            ; add_instructions = "Enter the name of the next 'Choice'."
+            ; add; remove; change_name; move } 
 
     let update_cell (matrix: t) factor_name alternative_name new_value : decision_matrix_factory_result =
         DecisionMatrixTable.update_cell_from_string 

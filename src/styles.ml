@@ -28,6 +28,10 @@ let highlight_class = "highlight"
 
 let score_header_class = "score-header"
 
+let menu_class = "menu"
+
+let body_class = "body"
+
 let score_class = function
     | TriPartitioner.Low ->
         "score-low"
@@ -49,6 +53,7 @@ let style = {j|
         display: flex;
         flex-direction: column;
         font-family: sans-serif;
+        margin: 0;
     }
 
     p {
@@ -122,11 +127,15 @@ let style = {j|
     button {
         background-color: white;
         color: $blue_color;
+
         box-shadow: 0 0 0 1px $blue_color;
         border: none;
+        border-radius: 4px;
         padding: 6px;
+
         margin-left: 4px;
-        font-size: 14px;
+        font-size: 14px;     
+        cursor: pointer;
     }
 
     button:active {
@@ -141,7 +150,8 @@ let style = {j|
 
     a, a:active, a:visited {
         display: inline-block;
-        color: $blue_color
+        color: $blue_color;
+        cursor: pointer;
     }
 
     a.$button_link_class {
@@ -206,5 +216,34 @@ let style = {j|
     .$dialog_class p {
         margin-top: 8px;
         margin-bottom: 8px;
+    }
+
+    .$menu_class {
+        overflow: hidden;
+        background-color: #333;
+        position: fixed;
+        height: 36px;
+        width: 100%;
+    }
+
+    .$body_class {
+        margin-top: 37px;
+        height: calc(100% - 37px);
+        height: -webkit-calc(100% - 37px);
+        padding: 4px;
+    }
+
+    .$menu_class a {
+        float: left;
+        color: white;
+        text-align: center;
+        padding: 10px 16px;
+        text-decoration: none;
+        font-size: 14px;
+    }
+
+    .$menu_class a:hover {
+        background-color: #ddd;
+        color: black;
     }
 |j}

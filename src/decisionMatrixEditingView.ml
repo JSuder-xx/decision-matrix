@@ -11,6 +11,39 @@ module TriIntPartitioner = TriPartitioner.Make(
     end
 )
 
+module TeaHtmlEx = struct
+
+    let on_keyed ~eventName ~key ~decoder = 
+        Tea.Html.onCB eventName key (fun event ->
+            if Tea.Html.defaultOptions.stopPropagation then event##stopPropagation () |> ignore;
+            if Tea.Html.defaultOptions.preventDefault then event##preventDefault () |> ignore;
+            event
+            |> Tea_json.Decoder.decodeEvent decoder
+            |> Tea_result.result_to_option
+        )
+
+    module Keydown = struct
+        type keydown_info = 
+            { ctrlKey: bool
+            ; keyCode: int
+            }
+        
+        let keydown ~key ~msg ~keydown_predicate = 
+            let decode_keydown_info = 
+                let ctrlKey = Tea_json.Decoder.field "ctrlKey" Tea_json.Decoder.bool in
+                Tea.Json.Decoder.map2 (fun keyCode ctrlKey -> { keyCode; ctrlKey }) Tea.Html.keyCode ctrlKey in
+            let keydown_to_message info = 
+                if keydown_predicate info
+                then Tea.Json.Decoder.succeed msg                
+                else Tea.Json.Decoder.fail "Incorrect keys" in
+            on_keyed 
+                ~eventName: "keydown" 
+                ~key: key
+                ~decoder: (Tea.Json.Decoder.andThen keydown_to_message decode_keydown_info)
+    end
+
+end
+
 let button_view ?enabled:(enabled = true) title msg  =
     button
         [ onClick msg; Attributes.disabled (not enabled)]
@@ -89,7 +122,7 @@ let decision_matrix_view
         let factor_view factor_name = link_header_cell (DecisionMatrix.FactorName factor_name) in
         tr [] 
             (List.concat 
-                [ [(header_cell "Factors")]
+                [ [(header_cell "Criteria")]
                 ; factor_names |> List.map factor_view                
                 ; [(header_cell "")]
                 ]
@@ -98,7 +131,7 @@ let decision_matrix_view
         tr []
             (List.concat 
                 [
-                    [(header_cell "Weight")]
+                    [(header_cell "Significance")]
                     ; (
                         let (weights_name, values) = DecisionMatrix.weight_cells matrix in
                         let total = values |> List.map snd |> List.fold_left (+) 0 in 
@@ -122,7 +155,7 @@ let decision_matrix_view
     let alternatives = matrix |> DecisionMatrix.alternatives in                                      
     let almost_there_messsage_text required = text (sprintf "Add at least one %s to start filling in the the Decision Matrix cells." required) in
     match factor_names, alternatives with
-    | [], [] -> p [] [text (sprintf "Add %ss and %ss using the buttons above to start filling in the Decision Matrix." DecisionMatrix.alternative_editing.label DecisionMatrix.factor_editing.label)]
+    | [], [] -> p [] [text (sprintf "Use the Add buttons above to start filling in the Decision Matrix.")]
     | _, [] -> p [] [almost_there_messsage_text DecisionMatrix.alternative_editing.label]
     | [], _ -> p [] [almost_there_messsage_text DecisionMatrix.factor_editing.label]
     | _ ->
@@ -143,7 +176,8 @@ let should_display_matrix_view matrix =
 let error_view msg_opt = 
     span [Tea.Html.class' Styles.error_class] [text (Belt.Option.getWithDefault msg_opt "")]
 
-let update_name_view ~caption ~current_value ~error_message = 
+let update_name_view ~instructions ~caption ~current_value ~error_message = 
+    let is_commit_enabled = Belt.Option.isNone error_message in
     container_view
         [
             container_view
@@ -155,17 +189,28 @@ let update_name_view ~caption ~current_value ~error_message =
                             ; onInput (fun name -> DecisionMatrixEditing.Message.UpdateName name)     
                             ; (autofocus true)
                             ; classList [(Styles.error_class, Belt.Option.isSome error_message)]
+                            ; TeaHtmlEx.Keydown.keydown 
+                                ~key: (Printf.sprintf "%s%b" current_value is_commit_enabled)
+                                ~msg: DecisionMatrixEditing.Message.Commit
+                                ~keydown_predicate: (fun keydown_info  -> keydown_info.keyCode = 13 && is_commit_enabled)
                         ] 
                         []
-                    ; button_view "Commit" DecisionMatrixEditing.Message.Commit ~enabled: (Belt.Option.isNone error_message)
+                    ; button_view "OK" DecisionMatrixEditing.Message.Commit ~enabled: is_commit_enabled
                     ; button_view "Cancel" DecisionMatrixEditing.Message.Cancel 
                 ]
             ; error_view error_message
+            ; (
+                match instructions with 
+                | None -> Tea.Html.noNode
+                | Some instruction_text -> p [] [text instruction_text]
+            )
         ]
 
 let adding_view (adding_info: AddingInfo.t) ~error_message = 
+    (* let x = adding_info.dimension_editing *)
     update_name_view
         ~caption: (sprintf "New %s" (DimensionToEdit.label adding_info.dimension_editing))
+        ~instructions: (Some (DecisionMatrixEditing.DimensionToEdit.add_instructions adding_info.dimension_editing))
         ~current_value: adding_info.new_name
         ~error_message: error_message
 
@@ -175,6 +220,7 @@ let changing_name_view ({dimension_item_to_edit; new_name}:ChangingNameInfo.t) ~
             (DimensionItemToEdit.label dimension_item_to_edit) 
             (DimensionItemToEdit.name dimension_item_to_edit) 
         )
+        ~instructions: None
         ~current_value: new_name
         ~error_message: error_message
 
@@ -184,13 +230,12 @@ module Instructions = struct
 
     let general = 
         [ {j|
-A Decision Matrix is an analytical tool to assist in choosing between different Alternatives (aka Choices or Options). Each Alternative is scored 
-with a number from 0 to 10 for the relevant Factors (aka Criteria). The Factors themselves are given a Weight which indicates the relative 
-signifance of that Factor for the decision at hand. The Alternative with the highest calculated score is the best choice. 
+A Decision Matrix is an analytical tool for choosing between competing Choices in a particular context. Each Choice 
+is scored with a number from 0 to 10 for relevant Criteria. Each Criterion is given a Significance score which indicates the significant of that Criterion for the decision at hand. 
+The Choice with the highest weighted score is the best choice for that situation. 
 |j}     ; {j|
-The beauty of the Decision Matrix is that it distinguishes between how well an Alternative rates or performs for a given Factor and the significance of that Factor.
-The distinction between performance and significance tends to foster more productive conversations with peers by empowering 
-more pecise articulation of agreement and disagreement. 
+A Decision Matrix can be adapted to different situations by changing the Significance of the Criteria. This allows peers to share a common assessment of the Choices and yet 
+adapt that assessment to each individuals situational requirements. 
 |j}
         ; {j|
 Click <$share_caption> and copy the url to share the decision matrix with a collaborator. 
@@ -198,6 +243,11 @@ Click <$share_caption> and copy the url to share the decision matrix with a coll
         ]
 
 end
+
+let hyper_links = 
+    [ ("https://jsuder-xx.github.io", "My Home Page")
+    ; ("https://github.com/JSuder-xx/decision-matrix", "On GitHub")
+    ]
 
 let view ({ decision_matrix; interaction_state; error_message }: Model.t) =
     let (factor_label, alternative_label) = (DecisionMatrix.factor_editing.label, DecisionMatrix.alternative_editing.label) in
@@ -320,7 +370,16 @@ let view ({ decision_matrix; interaction_state; error_message }: Model.t) =
         ) in
     container_view 
         [
-            div [class' Styles.top_controls_class] top_controls
-            ; hr [] []
-            ; main_content
+            div [ class' Styles.menu_class ]                
+                (
+                    hyper_links
+                    |> List.map (fun (msg, txt) ->
+                        a [ Tea.Html.href msg; Tea.Html.target "_blank" ] [text txt] 
+                    )
+                )
+            ; div [ class' Styles.body_class ]
+                [ div [class' Styles.top_controls_class] top_controls
+                ; hr [] []
+                ; main_content
+                ]        
         ]

@@ -17,6 +17,9 @@ module DimensionToEdit = struct
     let label : t -> string = function
         | Left editing -> editing.label
         | Right editing -> editing.label
+    let add_instructions : t -> string = function
+        | Left editing -> editing.add_instructions
+        | Right editing -> editing.add_instructions
 end
 
 let decision_matrix_key = "decision_matrix"
